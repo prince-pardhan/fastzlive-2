@@ -131,24 +131,68 @@ export const api = {
   // --- Media Library ---
   async getMedia(): Promise<MediaItem[]> {
     const res = await fetch('/api/media');
-    const json = await res.json();
+    const text = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`Media fetch error: ${text.slice(0, 100)}`);
+    }
     if (!json.success) throw new Error(json.error || 'Failed to fetch media');
     return json.data;
   },
 
   async uploadMedia(formData: FormData): Promise<MediaItem[]> {
-    const res = await fetch('/api/media/upload', {
+    try {
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const text = await res.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error(`Server returned HTML instead of JSON (${res.status}). Falling back to Base64 upload.`);
+      }
+
+      if (!json.success) throw new Error(json.error || 'Failed to upload media');
+      return json.data;
+    } catch (err: any) {
+      console.warn('Multipart upload encountered issue:', err.message);
+      throw err;
+    }
+  },
+
+  async uploadMediaBase64(items: { dataUrl: string; filename: string }[]): Promise<MediaItem[]> {
+    const res = await fetch('/api/media/upload-base64', {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
     });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || 'Failed to upload media');
+
+    const text = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`Base64 upload response error (${res.status}): ${text.slice(0, 120)}`);
+    }
+
+    if (!json.success) throw new Error(json.error || 'Failed to save base64 media');
     return json.data;
   },
 
   async deleteMedia(id: string): Promise<void> {
     const res = await fetch(`/api/media/${id}`, { method: 'DELETE' });
-    const json = await res.json();
+    const text = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`Delete failed: ${text.slice(0, 100)}`);
+    }
     if (!json.success) throw new Error(json.error || 'Failed to delete media');
   },
 

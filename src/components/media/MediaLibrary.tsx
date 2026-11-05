@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { MediaItem } from '../../types/news';
 import { api } from '../../lib/api';
+import { optimizeImageForUpload } from '../../lib/imageUtils';
 
 interface MediaLibraryProps {
   media: MediaItem[];
@@ -25,6 +26,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({ media, onRefresh }) 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [statusNotice, setStatusNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const filteredMedia = media.filter(
     (m) =>
@@ -36,16 +38,43 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({ media, onRefresh }) 
     if (!files || files.length === 0) return;
 
     setUploading(true);
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i]);
-    }
+    setStatusNotice(null);
 
     try {
-      await api.uploadMedia(formData);
+      // Step 1: Optimize images in parallel
+      const optimizedResults = await Promise.all(
+        Array.from(files).map((file) => optimizeImageForUpload(file, 1920, 0.85))
+      );
+
+      // Attempt 1: Multipart upload with optimized files
+      let uploadedSuccessfully = false;
+      try {
+        const formData = new FormData();
+        for (const item of optimizedResults) {
+          formData.append('files', item.file);
+        }
+        await api.uploadMedia(formData);
+        uploadedSuccessfully = true;
+      } catch (multipartErr: any) {
+        console.warn('Multipart upload failed, attempting Base64 upload:', multipartErr.message);
+      }
+
+      // Attempt 2: Base64 JSON upload fallback
+      if (!uploadedSuccessfully) {
+        const base64Payload = optimizedResults.map((item) => ({
+          dataUrl: item.dataUrl,
+          filename: item.file.name,
+        }));
+        await api.uploadMediaBase64(base64Payload);
+        uploadedSuccessfully = true;
+      }
+
+      setStatusNotice({ type: 'success', message: `${files.length} file(s) successfully added to media library!` });
       onRefresh();
+      setTimeout(() => setStatusNotice(null), 4000);
     } catch (err: any) {
-      alert(`Upload failed: ${err.message}`);
+      console.error('Upload failed:', err);
+      setStatusNotice({ type: 'error', message: 'Could not upload some files. Please check file formats.' });
     } finally {
       setUploading(false);
     }
@@ -114,6 +143,19 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({ media, onRefresh }) 
         </label>
       </div>
 
+      {/* Status Notice */}
+      {statusNotice && (
+        <div
+          className={`rounded-xl p-3 text-xs font-semibold flex items-center justify-between border ${
+            statusNotice.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-red-50 text-red-800 border-red-300 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+          }`}
+        >
+          <span>{statusNotice.message}</span>
+          <button onClick={() => setStatusNotice(null)} className="text-xs opacity-75 hover:opacity-100">✕</button>
+        </div>
+      )}
       {/* Drag & Drop Upload Zone */}
       <div
         onDragEnter={() => setDragActive(true)}

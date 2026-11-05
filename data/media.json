@@ -1,0 +1,81 @@
+[
+  {
+    "id": "med-1793884949630-eb6q",
+    "filename": "sample_1793884949624.jpg",
+    "url": "/uploads/sample_1793884949624.jpg",
+    "size": 23,
+    "mimeType": "image/jpeg",
+    "uploadedAt": "2026-11-05T13:22:29.630Z",
+    "title": "sample.jpg"
+  },
+  {
+    "id": "med-1793884938526-5753",
+    "filename": "test_dot_1793884938526.png",
+    "url": "/uploads/test_dot_1793884938526.png",
+    "size": 70,
+    "mimeType": "image/png",
+    "uploadedAt": "2026-11-05T13:22:18.526Z",
+    "title": "test_dot.png"
+  },
+  {
+    "id": "med-1793884695818-3ydk",
+    "filename": "test_1793884695812.jpg",
+    "url": "/uploads/test_1793884695812.jpg",
+    "size": 16,
+    "mimeType": "image/jpeg",
+    "uploadedAt": "2026-11-05T13:18:15.818Z",
+    "title": "test.jpg"
+  },
+  {
+    "id": "med-1",
+    "filename": "supreme_court_delhi.jpg",
+    "url": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200&auto=format&fit=crop&q=80",
+    "size": 420100,
+    "mimeType": "image/jpeg",
+    "dimensions": {
+      "width": 1200,
+      "height": 800
+    },
+    "uploadedAt": "2026-11-05T07:59:19.431Z",
+    "title": "Supreme Court of India, New Delhi"
+  },
+  {
+    "id": "med-2",
+    "filename": "haryana_assembly_budget.jpg",
+    "url": "https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=1200&auto=format&fit=crop&q=80",
+    "size": 512300,
+    "mimeType": "image/jpeg",
+    "dimensions": {
+      "width": 1200,
+      "height": 750
+    },
+    "uploadedAt": "2026-11-05T04:59:19.431Z",
+    "title": "Government Assembly Session"
+  },
+  {
+    "id": "med-3",
+    "filename": "stock_market_sensex.jpg",
+    "url": "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&auto=format&fit=crop&q=80",
+    "size": 389400,
+    "mimeType": "image/jpeg",
+    "dimensions": {
+      "width": 1200,
+      "height": 800
+    },
+    "uploadedAt": "2026-11-05T00:59:19.431Z",
+    "title": "Stock Market Bull Run Trading Desk"
+  },
+  {
+    "id": "med-4",
+    "filename": "cricket_stadium_india.jpg",
+    "url": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=1200&auto=format&fit=crop&q=80",
+    "size": 610200,
+    "mimeType": "image/jpeg",
+    "dimensions": {
+      "width": 1200,
+      "height": 800
+    },
+    "uploadedAt": "2026-11-04T12:59:19.431Z",
+    "title": "Cricket Stadium Floodlights Match"
+  }
+]

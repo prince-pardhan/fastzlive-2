@@ -40,13 +40,29 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB limit
 });
 
 // Middleware
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Safe Multer upload handler wrapper preventing uncaught multipart errors
+const handleUploadMiddleware = (req: Request, res: Response, next: any) => {
+  upload.array('files', 10)(req, res, (err: any) => {
+    if (err) {
+      console.error('Multer file parsing error:', err);
+      return res.status(400).json({
+        success: false,
+        error: err.code === 'LIMIT_FILE_SIZE'
+          ? 'File size exceeds maximum allowable limit (30MB).'
+          : err.message || 'File upload parsing error',
+      });
+    }
+    next();
+  });
+};
 
 // Helper: safe JSON file read & write
 function readJsonFile<T>(filename: string, defaultValue: T): T {
@@ -713,11 +729,11 @@ app.get('/api/media', (_req: Request, res: Response) => {
   }
 });
 
-app.post('/api/media/upload', upload.array('files', 10), (req: Request, res: Response) => {
+app.post('/api/media/upload', handleUploadMiddleware, (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
-      return res.status(400).json({ success: false, error: 'No files uploaded' });
+      return res.status(400).json({ success: false, error: 'No files were attached for upload' });
     }
 
     const currentMedia = readJsonFile<MediaItem[]>('media.json', INITIAL_MEDIA);
@@ -742,9 +758,72 @@ app.post('/api/media/upload', upload.array('files', 10), (req: Request, res: Res
       message: `${newItems.length} file(s) uploaded successfully`,
       data: newItems,
     });
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ success: false, error: 'Failed to upload media' });
+  } catch (err: any) {
+    console.error('Upload processing error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to process media upload' });
+  }
+});
+
+// JSON Base64 upload endpoint for 100% proxy compatibility & mobile reliability
+app.post('/api/media/upload-base64', (req: Request, res: Response) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'No image payloads provided' });
+    }
+
+    const currentMedia = readJsonFile<MediaItem[]>('media.json', INITIAL_MEDIA);
+    const newItems: MediaItem[] = [];
+
+    for (const item of items) {
+      const { dataUrl, filename: origName = 'news_image.jpg' } = item;
+      if (!dataUrl) continue;
+
+      let buffer: Buffer;
+      let ext = '.jpg';
+      let mimeType = 'image/jpeg';
+
+      const matches = dataUrl.match(/^data:([A-Za-z0-9-+/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1];
+        if (mimeType.includes('png')) ext = '.png';
+        else if (mimeType.includes('webp')) ext = '.webp';
+        else if (mimeType.includes('gif')) ext = '.gif';
+        buffer = Buffer.from(matches[2], 'base64');
+      } else {
+        buffer = Buffer.from(dataUrl, 'base64');
+      }
+
+      const cleanBase = path.basename(origName, path.extname(origName)).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const uniqueFilename = `${cleanBase}_${Date.now()}${ext}`;
+      const diskPath = path.join(UPLOADS_DIR, uniqueFilename);
+      fs.writeFileSync(diskPath, buffer);
+
+      const url = `/uploads/${uniqueFilename}`;
+      const mediaItem: MediaItem = {
+        id: `med-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        filename: uniqueFilename,
+        url,
+        size: buffer.length,
+        mimeType,
+        uploadedAt: new Date().toISOString(),
+        title: origName,
+      };
+
+      newItems.push(mediaItem);
+    }
+
+    currentMedia.unshift(...newItems);
+    writeJsonFile('media.json', currentMedia);
+
+    res.status(201).json({
+      success: true,
+      message: `${newItems.length} image(s) processed and stored successfully`,
+      data: newItems,
+    });
+  } catch (err: any) {
+    console.error('Base64 upload error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to process base64 upload' });
   }
 });
 
