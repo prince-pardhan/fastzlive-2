@@ -1,0 +1,6 @@
+{
+  "name": "Fastzlive - News Admin Dashboard",
+  "description": "Professional Hindi & English news publishing CMS and admin dashboard for Fastzlive.com featuring AI news assistant, comprehensive article editor, categories, media library, and breaking news management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
