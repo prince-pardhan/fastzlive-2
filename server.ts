@@ -4,6 +4,8 @@
  */
 
 import express, { Request, Response } from 'express';
+import http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -15,9 +17,82 @@ import { NewsArticle, NewsCategory, MediaItem, SiteSettings, AdminUser } from '.
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+const sseClients = new Set<Response>();
+
 const PORT = 3000;
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const UPLOADS_DIR = path.resolve(process.cwd(), 'public', 'uploads');
+
+// Real-Time Broadcast to all WebSocket and SSE subscribers
+function broadcast(payload: { type: string; data?: any; message?: string; timestamp?: string }) {
+  const jsonStr = JSON.stringify({
+    ...payload,
+    timestamp: payload.timestamp || new Date().toISOString(),
+  });
+
+  // Broadcast to WebSocket clients
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(jsonStr);
+      } catch (err) {
+        console.error('WS broadcast error:', err);
+      }
+    }
+  });
+
+  // Broadcast to SSE clients
+  sseClients.forEach((client) => {
+    try {
+      client.write(`data: ${jsonStr}\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  });
+}
+
+function broadcastPresence() {
+  const activeCount = Math.max(1, wss.clients.size + sseClients.size);
+  broadcast({
+    type: 'presence:update',
+    data: {
+      activeEditors: activeCount,
+      activeReaders: Math.max(activeCount * 14 + 182, 182),
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
+
+// WebSocket connection lifecycle
+wss.on('connection', (ws: WebSocket) => {
+  console.log(`[Fastzlive Real-Time WS] Client connected. Total sockets: ${wss.clients.size}`);
+
+  ws.send(JSON.stringify({
+    type: 'init',
+    data: {
+      activeEditors: wss.clients.size,
+      connectedAt: new Date().toISOString(),
+    },
+    message: 'Fastzlive Real-Time Newsroom WebSocket Online',
+  }));
+
+  broadcastPresence();
+
+  ws.on('message', (raw) => {
+    try {
+      const parsed = JSON.parse(raw.toString());
+      if (parsed.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      }
+    } catch (e) {}
+  });
+
+  ws.on('close', () => {
+    broadcastPresence();
+  });
+});
 
 // Ensure data & upload directories exist
 if (!fs.existsSync(DATA_DIR)) {
@@ -508,6 +583,13 @@ app.post('/api/news', (req: Request, res: Response) => {
     articles.unshift(newArticle);
     writeJsonFile('news.json', articles);
 
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:created',
+      data: newArticle,
+      message: `News story created: "${newArticle.title}"`,
+    });
+
     res.status(201).json({
       success: true,
       message: 'Article created successfully',
@@ -544,6 +626,13 @@ app.put('/api/news/:id', (req: Request, res: Response) => {
     articles[index] = updatedArticle;
     writeJsonFile('news.json', articles);
 
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:updated',
+      data: updatedArticle,
+      message: `Article updated: "${updatedArticle.title}"`,
+    });
+
     res.json({
       success: true,
       message: 'Article updated successfully',
@@ -558,11 +647,20 @@ app.put('/api/news/:id', (req: Request, res: Response) => {
 app.delete('/api/news/:id', (req: Request, res: Response) => {
   try {
     const articles = readJsonFile<NewsArticle[]>('news.json', INITIAL_ARTICLES);
+    const deletedArticle = articles.find(a => a.id === req.params.id);
     const filtered = articles.filter(a => a.id !== req.params.id);
     if (filtered.length === articles.length) {
       return res.status(404).json({ success: false, error: 'Article not found' });
     }
     writeJsonFile('news.json', filtered);
+
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:deleted',
+      data: { id: req.params.id },
+      message: deletedArticle ? `Deleted article: "${deletedArticle.title}"` : 'Article removed',
+    });
+
     res.json({ success: true, message: 'Article deleted successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete article' });
@@ -595,6 +693,13 @@ app.post('/api/news/:id/duplicate', (req: Request, res: Response) => {
     articles.unshift(duplicated);
     writeJsonFile('news.json', articles);
 
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:created',
+      data: duplicated,
+      message: `Duplicated article as draft: "${duplicated.title}"`,
+    });
+
     res.status(201).json({
       success: true,
       message: 'Article duplicated successfully as draft',
@@ -615,6 +720,16 @@ app.patch('/api/news/:id/toggle-breaking', (req: Request, res: Response) => {
     article.isBreaking = !article.isBreaking;
     article.updatedAt = new Date().toISOString();
     writeJsonFile('news.json', articles);
+
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:breaking_toggled',
+      data: article,
+      message: article.isBreaking
+        ? `🚨 BREAKING ALERT ACTIVATED: "${article.title}"`
+        : `Breaking alert deactivated for "${article.title}"`,
+    });
+
     res.json({ success: true, data: article });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to toggle breaking status' });
@@ -631,6 +746,14 @@ app.patch('/api/news/:id/toggle-featured', (req: Request, res: Response) => {
     article.isFeatured = !article.isFeatured;
     article.updatedAt = new Date().toISOString();
     writeJsonFile('news.json', articles);
+
+    // Real-Time Broadcast
+    broadcast({
+      type: 'news:featured_toggled',
+      data: article,
+      message: article.isFeatured ? `Featured story pinned: "${article.title}"` : 'Featured story unpinned',
+    });
+
     res.json({ success: true, data: article });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to toggle featured status' });
@@ -1061,6 +1184,66 @@ Return ONLY valid JSON.`;
 });
 
 // -------------------------------------------------------------
+// Real-Time Server-Sent Events (SSE) Fallback Endpoint
+// -------------------------------------------------------------
+app.get('/api/realtime/events', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  sseClients.add(res);
+  broadcastPresence();
+
+  // Send initial handshake
+  res.write(`data: ${JSON.stringify({
+    type: 'init',
+    data: {
+      activeEditors: wss.clients.size + sseClients.size,
+      connectedAt: new Date().toISOString(),
+    },
+    message: 'Fastzlive Real-Time Newsroom SSE Stream Connected',
+  })}\n\n`);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+    broadcastPresence();
+  });
+});
+
+// Real-Time Automated News Scheduler
+setInterval(() => {
+  try {
+    const articles = readJsonFile<NewsArticle[]>('news.json', INITIAL_ARTICLES);
+    const now = new Date();
+    let hasChanges = false;
+
+    for (const art of articles) {
+      if (art.status === 'scheduled' && art.scheduledAt) {
+        if (new Date(art.scheduledAt).getTime() <= now.getTime()) {
+          art.status = 'published';
+          art.publishedAt = now.toISOString();
+          art.updatedAt = now.toISOString();
+          hasChanges = true;
+
+          broadcast({
+            type: 'news:auto_published',
+            data: art,
+            message: `🔔 AUTO-PUBLISHED: "${art.title}" is now live on Fastzlive.com!`,
+          });
+        }
+      }
+    }
+
+    if (hasChanges) {
+      writeJsonFile('news.json', articles);
+    }
+  } catch (err) {
+    console.error('Auto-scheduler ticker error:', err);
+  }
+}, 8000);
+
+// -------------------------------------------------------------
 // Vite Middleware / Static Production Serving
 // -------------------------------------------------------------
 async function startServer() {
@@ -1077,8 +1260,8 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Fastzlive CMS Server] running on http://0.0.0.0:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Fastzlive CMS Server + Real-Time WS] listening on http://0.0.0.0:${PORT}`);
   });
 }
 

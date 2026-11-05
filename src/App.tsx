@@ -16,8 +16,9 @@ import { AdminProfile } from './components/profile/AdminProfile';
 import { LoginModal } from './components/auth/LoginModal';
 import { NewsPreviewModal } from './components/news/NewsPreviewModal';
 import { api } from './lib/api';
+import { realtime, RealtimeEvent } from './lib/realtime';
 import { NewsArticle, NewsCategory, MediaItem, SiteSettings, AdminUser } from './types/news';
-import { Flame, Loader2, Sparkles, ExternalLink } from 'lucide-react';
+import { Flame, Loader2, Sparkles, ExternalLink, Radio, Bell, X, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   // Authentication
@@ -57,9 +58,128 @@ export default function App() {
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Real-Time Newsroom Synchronization State
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(realtime.isConnected);
+  const [activeEditors, setActiveEditors] = useState(realtime.activeEditors);
+  const [activeReaders, setActiveReaders] = useState(realtime.activeReaders);
+  const [realtimeNotice, setRealtimeNotice] = useState<{
+    message: string;
+    timestamp: string;
+    type?: string;
+  } | null>(null);
+
   // Active Editor / Preview item
   const [editingArticle, setEditingArticle] = useState<NewsArticle | null>(null);
   const [globalPreviewArticle, setGlobalPreviewArticle] = useState<NewsArticle | null>(null);
+
+  // Subscribe to Real-Time WebSocket and SSE Broadcasts
+  useEffect(() => {
+    const unsubscribe = realtime.subscribe((event: RealtimeEvent) => {
+      setIsRealtimeConnected(realtime.isConnected);
+      setActiveEditors(realtime.activeEditors);
+      setActiveReaders(realtime.activeReaders);
+
+      switch (event.type) {
+        case 'presence:update':
+          if (event.data?.activeEditors) setActiveEditors(event.data.activeEditors);
+          if (event.data?.activeReaders) setActiveReaders(event.data.activeReaders);
+          break;
+
+        case 'news:created':
+          if (event.data?.id) {
+            setArticles((prev) => {
+              if (prev.some((a) => a.id === event.data.id)) return prev;
+              return [event.data, ...prev];
+            });
+            setRealtimeNotice({
+              message: event.message || `New story: "${event.data?.title}"`,
+              timestamp: new Date().toLocaleTimeString('en-IN'),
+              type: 'created',
+            });
+          }
+          break;
+
+        case 'news:updated':
+          if (event.data?.id) {
+            setArticles((prev) =>
+              prev.map((a) => (a.id === event.data.id ? event.data : a))
+            );
+            setRealtimeNotice({
+              message: event.message || `Article updated: "${event.data?.title}"`,
+              timestamp: new Date().toLocaleTimeString('en-IN'),
+              type: 'updated',
+            });
+          }
+          break;
+
+        case 'news:deleted':
+          if (event.data?.id) {
+            setArticles((prev) => prev.filter((a) => a.id !== event.data.id));
+            setRealtimeNotice({
+              message: event.message || 'Article deleted from newsroom',
+              timestamp: new Date().toLocaleTimeString('en-IN'),
+              type: 'deleted',
+            });
+          }
+          break;
+
+        case 'news:breaking_toggled':
+          if (event.data?.id) {
+            setArticles((prev) =>
+              prev.map((a) => (a.id === event.data.id ? event.data : a))
+            );
+            setRealtimeNotice({
+              message: event.message || `Breaking alert changed: "${event.data?.title}"`,
+              timestamp: new Date().toLocaleTimeString('en-IN'),
+              type: 'breaking',
+            });
+          }
+          break;
+
+        case 'news:featured_toggled':
+          if (event.data?.id) {
+            setArticles((prev) =>
+              prev.map((a) => (a.id === event.data.id ? event.data : a))
+            );
+          }
+          break;
+
+        case 'news:auto_published':
+          if (event.data?.id) {
+            setArticles((prev) =>
+              prev.map((a) => (a.id === event.data.id ? event.data : a))
+            );
+            setRealtimeNotice({
+              message: event.message || `Scheduled story auto-published: "${event.data?.title}"`,
+              timestamp: new Date().toLocaleTimeString('en-IN'),
+              type: 'published',
+            });
+          }
+          break;
+
+        case 'categories:updated':
+          api.getCategories().then(setCategories).catch(() => {});
+          break;
+
+        case 'settings:updated':
+          if (event.data) setSettings(event.data);
+          break;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Auto-dismiss real-time notice after 5 seconds
+  useEffect(() => {
+    if (!realtimeNotice) return;
+    const timer = setTimeout(() => {
+      setRealtimeNotice(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [realtimeNotice]);
 
   // Sync dark mode class with HTML document
   useEffect(() => {
@@ -178,6 +298,9 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         breakingNewsList={breakingNewsList}
+        isRealtimeConnected={isRealtimeConnected}
+        activeEditors={activeEditors}
+        activeReaders={activeReaders}
         onNavigate={(sec) => {
           if (sec === 'create') setEditingArticle(null);
           setCurrentSection(sec);
@@ -450,6 +573,46 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Real-Time Newsroom Broadcast Toast Alert */}
+      {realtimeNotice && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm rounded-2xl bg-neutral-900 border border-neutral-700 p-4 shadow-2xl text-white animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl shrink-0 ${
+              realtimeNotice.type === 'breaking'
+                ? 'bg-red-600 text-white animate-bounce'
+                : 'bg-emerald-600 text-white'
+            }`}>
+              {realtimeNotice.type === 'breaking' ? (
+                <Flame className="h-4 w-4 fill-white" />
+              ) : (
+                <Radio className="h-4 w-4 animate-pulse" />
+              )}
+            </div>
+
+            <div className="flex-1 space-y-0.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-red-500">
+                  {realtimeNotice.type === 'breaking' ? '🚨 LIVE BREAKING FLASH' : '⚡ REAL-TIME UPDATE'}
+                </span>
+                <span className="text-[10px] text-neutral-400 font-mono">
+                  {realtimeNotice.timestamp}
+                </span>
+              </div>
+              <p className="text-xs font-bold font-hindi leading-snug line-clamp-2 text-neutral-100">
+                {realtimeNotice.message}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setRealtimeNotice(null)}
+              className="text-neutral-400 hover:text-white p-0.5"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Preview Modal */}
       {globalPreviewArticle && (

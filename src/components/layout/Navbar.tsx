@@ -22,6 +22,9 @@ interface NavbarProps {
   onLogout: () => void;
   breakingNewsList: NewsArticle[];
   onNavigate: (section: string) => void;
+  isRealtimeConnected?: boolean;
+  activeEditors?: number;
+  activeReaders?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -32,6 +35,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   breakingNewsList,
   onNavigate,
+  isRealtimeConnected = true,
+  activeEditors = 1,
+  activeReaders = 182,
 }) => {
   const [istTime, setIstTime] = useState<string>('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -90,8 +96,23 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Center: Live IST Newsroom Clock & Breaking ticker badge */}
-      <div className="hidden lg:flex items-center gap-4">
+      {/* Center: Real-Time Live Sync, Breaking alerts, & IST Newsroom Clock */}
+      <div className="hidden md:flex items-center gap-3">
+        {/* Real-Time Live Connection Indicator */}
+        <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-50/80 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isRealtimeConnected ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${isRealtimeConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+          </span>
+          <span className="text-[10px] tracking-wider uppercase font-black">
+            {isRealtimeConnected ? 'REAL-TIME LIVE' : 'CONNECTING...'}
+          </span>
+          <span className="text-emerald-300 dark:text-emerald-700">|</span>
+          <span className="text-[10px] font-mono font-medium">
+            {activeEditors} Editor{activeEditors > 1 ? 's' : ''} Online
+          </span>
+        </div>
+
         {/* Breaking Badge */}
         {breakingCount > 0 && (
           <button
@@ -108,7 +129,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
         {/* Live IST Clock */}
-        <div className="flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800">
+        <div className="hidden xl:flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900 px-3 py-1 rounded-md border border-neutral-200 dark:border-neutral-800">
           <Radio className="h-3 w-3 text-emerald-500 animate-pulse" />
           <span className="text-[11px] font-semibold uppercase text-neutral-500 dark:text-neutral-500">IST:</span>
           <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-200 tracking-tight">
